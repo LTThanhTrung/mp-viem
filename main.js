@@ -1,6 +1,6 @@
 
 
-const { createWalletClient, createPublicClient, http, } = require('viem')
+const { createWalletClient, createPublicClient, http } = require('viem')
 const { ronin, saigon } = require('viem/chains')
 const { privateKeyToAccount } = require('viem/accounts')
 
@@ -38,18 +38,24 @@ const main = async () => {
     // const duration = 3 * 30 * 24 * 60 * 60  // 3 month
     // sellNFT(tokenId, price, duration)
 
-    
+
     /* CANCEL SELL NFT */
     // const tokenId = "421422"
     // cancelSell(tokenId)
 
 
 
-    /* CREAT OFFER */
-    const tokenId = "346729"
-    const price = 0.1 * 10 ** 18 // Min offer = 0.1 RON
-    const duration = 24 * 60 * 60 // seconds
-    createOffer(tokenId, price, duration)
+    /* CREATE OFFER */
+    // const tokenId = "346729"
+    // const price = 0.1 * 10 ** 18 // Min offer = 0.1 RON
+    // const duration = 24 * 60 * 60 // seconds
+    // createOffer(tokenId, price, duration)
+
+
+
+    /* ACCEPT OFFER */
+    const tokenId = "368408"
+    acceptOffer(tokenId)
 }
 
 const buyNFT = async () => {
@@ -116,7 +122,13 @@ const createOffer = (tokenId, price, duration) => {
     utils.createErc721Offer(params, wallet, publicClient)
 }
 
+const acceptOffer = async (tokenId) => {
+    const offers = await utils.getMarketplaceOffers(tokenId)
+    const offer = offers[0]
 
+    //TO DO: SORT HIGHEST OFFER BY PRICE
+    await utils.acceptOffer(offer, wallet, publicClient)
+}
 
 main()
 
