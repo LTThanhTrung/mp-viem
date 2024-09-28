@@ -15,12 +15,10 @@ const utils = require('./utils')
 const config = require('./config')
 const chainID = ChainId.mainnet
 
-const account = privateKeyToAccount(config.config.privateKey)
 const chain = ronin
 
 const wallet = createWalletClient({
-    account,
-    chain: chain,
+    account:privateKeyToAccount(config.config.privateKey),
     transport: http("https://api.roninchain.com/rpc"),
 });
 
@@ -30,6 +28,12 @@ const publicClient = createPublicClient({
 })
 
 const main = async () => {
+    // buyNFT()
+
+    sellNFT()
+}
+
+const buyNFT = async () => {
     const paymentToken = paymentTokens[chainID][Token.RON].address
     //utils.approveERC20Token(wallet, publicClient, paymentToken) // Approve Buying Token to marketplace gateway
 
@@ -50,4 +54,27 @@ const main = async () => {
     }
 }
 
+const sellNFT = async () => {
+    const tokenAddress = config.config.erc721collectionAddress
+    // utils.approveERC721Token(wallet, publicClient, tokenAddress)
+
+    // TODO: FETCH NFT ID 
+    const tokenId = "421422"
+    const price = 10 * 10 ** 18 // 10 RON, 18 decimals
+    const duration = 3 * 30 * 24 * 60 * 60  // 3 month
+
+    const params = {
+        chainId: chainID,
+        tokenAddress: tokenAddress,
+        tokenId: tokenId,
+        paymentToken: paymentTokens[chainID].RON.address,
+        price: price,
+        duration: duration
+    };
+
+    utils.createErc721Order(params, wallet, publicClient)
+}
+
 main()
+
+

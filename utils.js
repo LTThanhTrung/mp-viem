@@ -1,5 +1,5 @@
 const { getContract, encodeAbiParameters, parseAbiParameters, encodeFunctionData, parseGwei } = require('viem')
-const { getConfig, ChainId, getErc721Tokens, AuctionType, SortBy, } = require('@sky-mavis/mavis-market-core')
+const { getConfig, ChainId, getErc721Tokens, AuctionType, SortBy, getErc721OrderState, generateErc721Order, requestCreateOrder } = require('@sky-mavis/mavis-market-core')
 
 const config = require('./config')
 
@@ -19,6 +19,24 @@ const approveERC20Token = async (walletClient, publicClient, contractAddress) =>
     const approveHash = await erc20Contract.write.approve([
         mpConfig.contractsAddress.marketGateway,
         config.config.erc20ApprovedValue
+    ])
+
+    console.log(approveHash)
+}
+
+const approveERC721Token = async (walletClient, publicClient, contractAddress) => {
+    const erc721Contract = getContract({
+        address: contractAddress,
+        abi: config.ERC721_ABI,
+        client: {
+            public: publicClient,
+            wallet: walletClient
+        }
+    })
+
+    const approveHash = await erc721Contract.write.setApprovalForAll([
+        mpConfig.contractsAddress.marketGateway,
+        true
     ])
 
     console.log(approveHash)
@@ -112,33 +130,27 @@ const encodeParamsForSettleErc721Order = (orderInfo, settlePrice) => {
     })
 }
 
-const generateErc721Order = (order) => {
-    const { expiredAt, basePrice, kind, startedAt, assets, paymentToken, maker, expectedState, nonce, marketFeePercentage } = order;
+const generateErc721Order$1 = (order) => {
+    const { price, duration, orderType, assets, paymentToken, maker, expectedState } = order;
+    const orderKind = orderType;
+    const now = new Date().getTime();
+    const startedAt = Math.ceil(now / 1000);
+    const expiredAt = startedAt + duration;
     const result = {
-        maker: maker,
-        kind: config.OrderKind[kind],
-        assets: assets.map(asset => {
-            if (asset) {
-                const { address, erc, quantity, id } = asset;
-                return {
-                    addr: address,
-                    erc: config.ErcAssetItem[erc],
-                    quantity: Number(quantity),
-                    id: id,
-                };
-            }
-        }),
-        expiredAt: expiredAt,
-        basePrice: basePrice,
-        paymentToken: paymentToken,
-        startedAt: startedAt,
+        maker,
+        kind: orderKind,
+        assets,
+        expiredAt,
+        paymentToken,
+        startedAt,
+        basePrice: price.toString(),
         endedAt: 0,
         endedPrice: '0',
-        expectedState: `${expectedState}`,
-        nonce: nonce,
-        marketFeePercentage: marketFeePercentage,
+        expectedState,
+        nonce: 0,
+        marketFeePercentage: config.config.MARKET_FEE_PERCENTAGE,
     };
-    return result
+    return result;
 };
 
 const encodeOrder = (order) => {
@@ -149,10 +161,92 @@ const encodeOrder = (order) => {
     return encodeAbiParameters(parseAbiParameters(orderTypes), [order])
 }
 
+const createErc721Order = async (params, wallet, publicClient) => {
+    const [walletAddress] = await wallet.getAddresses()
+    const { chainId, tokenAddress, tokenId, paymentToken, price, duration } = params;
+    const assets = [
+        {
+            id: tokenId,
+            addr: tokenAddress,
+            erc: config.ErcAssetItem['Erc721'],
+            quantity: 0,
+        },
+    ];
+
+    // const nonce = await getNonce(chainId, account);
+    const nonce = 0
+    const expectedState = await getErc721OrderState(chainId, assets);
+
+    const auctionData = {
+        price: BigInt(price),
+        duration,
+        paymentToken,
+        orderType: config.OrderKind['Sell'],
+        expectedState,
+        nonce,
+        maker: walletAddress,
+        assets,
+    };
+
+    const inputOrder = await generateInputOrder(auctionData);
+    const dataForSigning = await generateErc721Order$1(auctionData);
+
+    const signature = await getErc721OrderSignature(wallet, dataForSigning);
+
+    if (!signature) {
+        throw new Error('Invalid signature');
+    }
+
+    let x = await requestCreateOrder({ order: inputOrder, signature, account: walletAddress, chainId: chainID })
+    console.log(x)
+    // return requestCreateOrder({ order: inputOrder, signature, account, chainId });
+};
+
+const generateInputOrder = (data) => {
+    const { price, duration, orderType, expectedState, nonce, assets, paymentToken } = data;
+    const now = new Date().getTime();
+    const startedAt = Math.ceil(now / 1000);
+    const expiredAt = startedAt + duration;
+    const inputOrder = {
+        nonce,
+        assets: assets.map(asset => {
+            const { addr, erc, quantity, id } = asset;
+            return {
+                erc: Object.keys(config.ErcAssetItem).find(key => config.ErcAssetItem[key] == erc),
+                address: addr,
+                id: id.toString(),
+                quantity: quantity.toString(),
+            };
+        }),
+        startedAt,
+        expiredAt,
+        expectedState,
+        paymentToken,
+        kind: Object.keys(config.OrderKind).find(key => config.OrderKind[key] == orderType),
+        basePrice: price.toString(),
+    };
+    return inputOrder;
+};
+
+const getErc721OrderSignature = async (wallet, order) => {
+    const { marketGatewayDomain } = mpConfig
+
+    const signature = await wallet.signTypedData({
+        domain: marketGatewayDomain,
+        types: config.OrderAbiTypes,
+        primaryType: "Order",
+        message: order
+    })
+
+    return signature
+};
+
 
 module.exports = {
     approveERC20Token,
+    approveERC721Token,
     getOrders,
     buyErc721Token,
-    generateErc721Order
+    generateErc721Order,
+    createErc721Order
 }
